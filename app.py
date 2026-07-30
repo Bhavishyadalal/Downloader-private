@@ -1,7 +1,6 @@
 from flask import Flask, request, Response, stream_with_context
 import requests
 import re
-import urllib.parse
 import os
 import json
 import logging
@@ -12,13 +11,13 @@ logging.basicConfig(level=logging.INFO)
 @app.after_request
 def add_cors(resp):
     resp.headers['Access-Control-Allow-Origin'] = '*'
-    resp.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    resp.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS'
     resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return resp
 
 @app.route('/')
 def home():
-    return {"status": "alive", "message": "Terabox Proxy with cookie support"}
+    return {"status": "alive", "message": "Terabox Proxy (POST only)"}
 
 @app.route('/ping')
 def ping():
@@ -36,10 +35,10 @@ def parse_cookies(cookie_data):
     return {}
 
 def get_dlink_with_cookies(share_url, cookie_dict):
-    key = re.search(r'/s/([A-Za-z0-9_-]+)', share_url)
-    if not key:
+    key_match = re.search(r'/s/([A-Za-z0-9_-]+)', share_url)
+    if not key_match:
         return None, "Invalid share URL"
-    key = key.group(1)
+    key = key_match.group(1)
 
     session = requests.Session()
     session.headers.update({
@@ -50,11 +49,13 @@ def get_dlink_with_cookies(share_url, cookie_dict):
     for name, value in cookie_dict.items():
         session.cookies.set(name, value)
 
+    # Visit share page (to get fresh tokens)
     try:
         session.get(f"https://www.terabox.com/s/{key}", timeout=15)
     except:
         pass
 
+    # API call
     api_url = f"https://www.terabox.com/api/shorturlinfo?shorturl={key}"
     try:
         resp = session.get(api_url, timeout=15)
@@ -65,42 +66,30 @@ def get_dlink_with_cookies(share_url, cookie_dict):
                 first = file_list[0]
                 dlink = first.get("dlink")
                 filename = first.get("server_filename", "terabox_download.bin")
-                return dlink, filename
+                if dlink:
+                    return dlink, filename
         else:
             return None, f"API error: {data.get('errmsg', 'unknown')}"
     except Exception as e:
         return None, f"API request failed: {str(e)}"
     return None, "No download link"
 
-@app.route('/download', methods=['GET', 'POST'])
+@app.route('/download', methods=['POST'])
 def download_proxy():
-    # Handle POST (preferred)
-    if request.method == 'POST':
-        data = request.get_json()
-        if not data:
-            return "Missing JSON body", 400
-        share_url = data.get('url')
-        cookies_data = data.get('cookies')
-    else:
-        # GET fallback (not recommended for large cookies)
-        share_url = request.args.get('url')
-        cookies_json = request.args.get('cookies')
-        if cookies_json:
-            try:
-                cookies_data = json.loads(urllib.parse.unquote(cookies_json))
-            except:
-                return "Invalid cookies format", 400
-        else:
-            cookies_data = None
+    data = request.get_json()
+    if not data:
+        return "Missing JSON body", 400
 
+    share_url = data.get('url')
+    cookies_data = data.get('cookies')
     if not share_url:
-        return "Missing 'url' parameter", 400
+        return "Missing 'url'", 400
     if not cookies_data:
-        return "Missing 'cookies' – must provide your Terabox cookies.", 400
+        return "Missing 'cookies'", 400
 
     cookie_dict = parse_cookies(cookies_data)
     if not cookie_dict:
-        return "No valid cookies found", 400
+        return "No valid cookies", 400
 
     dlink, filename_or_error = get_dlink_with_cookies(share_url, cookie_dict)
     if not dlink:
