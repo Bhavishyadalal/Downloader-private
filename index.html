@@ -157,7 +157,7 @@
 
     <button class="btn" id="downloadBtn">⟡ DOWNLOAD ⟡</button>
     <div id="status">⚡ ready</div>
-    <div class="footer">streaming proxy · cookies stored locally only</div>
+    <div class="footer">streaming proxy · POST only · no URL limits</div>
 </div>
 <script>
     function showCookieHelp() {
@@ -176,20 +176,18 @@
         );
     }
 
-    // Paste from clipboard
     document.getElementById('pasteBtn').addEventListener('click', async function() {
         try {
             const text = await navigator.clipboard.readText();
             document.getElementById('cookiesInput').value = text;
-            document.getElementById('status').innerHTML = '✅ Cookies pasted from clipboard';
+            document.getElementById('status').innerHTML = '✅ Cookies pasted';
             document.getElementById('status').className = 'success';
-        } catch (err) {
-            document.getElementById('status').innerHTML = '❌ Could not read clipboard – paste manually';
+        } catch {
+            document.getElementById('status').innerHTML = '❌ Paste manually';
             document.getElementById('status').className = 'error';
         }
     });
 
-    // Main download – using POST to avoid URL length limit
     document.getElementById('downloadBtn').addEventListener('click', async function() {
         const url = document.getElementById('urlInput').value.trim();
         const backend = document.getElementById('backendUrl').value.trim();
@@ -198,18 +196,18 @@
 
         if (!url) { status.innerHTML = '❌ PASTE A TERABOX URL'; status.className = 'error'; return; }
         if (!backend) { status.innerHTML = '❌ SET BACKEND URL'; status.className = 'error'; return; }
-        if (!cookiesRaw) { status.innerHTML = '❌ PASTE YOUR COOKIES (see help)'; status.className = 'error'; return; }
+        if (!cookiesRaw) { status.innerHTML = '❌ PASTE YOUR COOKIES'; status.className = 'error'; return; }
 
         let cookiesObj;
         try {
             cookiesObj = JSON.parse(cookiesRaw);
-        } catch (e) {
-            status.innerHTML = '❌ INVALID JSON – check format';
+        } catch {
+            status.innerHTML = '❌ INVALID JSON';
             status.className = 'error';
             return;
         }
 
-        status.innerHTML = '🔄 CONTACTING PROXY WITH YOUR COOKIES ...';
+        status.innerHTML = '🔄 DOWNLOADING ...';
         status.className = '';
 
         try {
@@ -220,34 +218,31 @@
             });
 
             if (!response.ok) {
-                const errorText = await response.text();
-                status.innerHTML = '❌ ERROR: ' + errorText;
+                const err = await response.text();
+                status.innerHTML = '❌ ERROR: ' + err;
                 status.className = 'error';
                 return;
             }
 
-            // If response is a file stream, we need to trigger download
-            // We can use a Blob to download the file
             const blob = await response.blob();
-            const contentDisposition = response.headers.get('Content-Disposition');
+            const cd = response.headers.get('Content-Disposition');
             let filename = 'terabox_download.bin';
-            if (contentDisposition) {
-                const match = contentDisposition.match(/filename="(.+)"/);
+            if (cd) {
+                const match = cd.match(/filename="(.+)"/);
                 if (match) filename = match[1];
             }
-            const downloadUrl = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = downloadUrl;
+            a.href = URL.createObjectURL(blob);
             a.download = filename;
             document.body.appendChild(a);
             a.click();
             a.remove();
-            window.URL.revokeObjectURL(downloadUrl);
+            URL.revokeObjectURL(a.href);
 
-            status.innerHTML = '✅ DOWNLOAD SUCCESSFUL: ' + filename;
+            status.innerHTML = '✅ DOWNLOADED: ' + filename;
             status.className = 'success';
-        } catch (error) {
-            status.innerHTML = '❌ NETWORK ERROR: ' + error.message;
+        } catch (err) {
+            status.innerHTML = '❌ NETWORK ERROR: ' + err.message;
             status.className = 'error';
         }
     });
