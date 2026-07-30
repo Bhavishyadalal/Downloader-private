@@ -19,7 +19,7 @@ def add_cors(resp):
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept": "application/json, text/plain, */*",
     "Accept-Language": "en-US,en;q=0.5",
     "Referer": "https://www.terabox.com/",
 }
@@ -32,31 +32,7 @@ def home():
 def ping():
     return "OK", 200
 
-# ---------- Core functions ----------
-def extract_dlink_from_html(html):
-    # Use BeautifulSoup to find all script tags
-    soup = BeautifulSoup(html, 'html.parser')
-    for script in soup.find_all('script'):
-        if not script.string:
-            continue
-        content = script.string
-        # Look for any assignment to window.data or similar
-        if 'window.data' in content or '__INITIAL_STATE__' in content or 'dlink' in content:
-            # Try to extract a JSON-like structure
-            # Find a block that contains "dlink"
-            dlink_match = re.search(r'"dlink"\s*:\s*"([^"]+)"', content)
-            if dlink_match:
-                return dlink_match.group(1).replace('\\', '')
-            # Also look for "download_link"
-            dl_match = re.search(r'"download_link"\s*:\s*"([^"]+)"', content)
-            if dl_match:
-                return dl_match.group(1).replace('\\', '')
-    # Fallback: scan entire HTML
-    match = re.search(r'"dlink"\s*:\s*"([^"]+)"', html)
-    if match:
-        return match.group(1).replace('\\', '')
-    return None
-
+# ---------- Core ----------
 def get_dlink_and_filename(share_url):
     match = re.search(r'/s/([A-Za-z0-9_-]+)', share_url)
     if not match:
@@ -66,14 +42,12 @@ def get_dlink_and_filename(share_url):
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    # Visit share page to get cookies and HTML
+    # Visit share page to get cookies
     page_url = f"https://www.terabox.com/s/{key}"
     try:
-        page_resp = session.get(page_url, timeout=15)
-        page_resp.raise_for_status()
-        html = page_resp.text
+        session.get(page_url, timeout=15)
     except Exception as e:
-        return None, None, f"Failed to load share page: {str(e)}"
+        return None, None, f"Failed to reach Terabox: {str(e)}"
 
     # Try API
     api_url = f"https://www.terabox.com/api/shorturlinfo?shorturl={key}"
@@ -81,69 +55,64 @@ def get_dlink_and_filename(share_url):
     try:
         api_resp = session.get(api_url, timeout=15)
         data = api_resp.json()
-    except:
-        pass
+        app.logger.info(f"API response: {json.dumps(data)}")
+    except Exception as e:
+        return None, None, f"API request failed: {str(e)}"
 
-    dlink = None
-    filename = "terabox_download.bin"
-
-    # First attempt: if API returned valid dlink
+    # If API returned a valid list
     if data and data.get("errno") == 0:
         file_list = data.get("list", [])
         if file_list:
             first = file_list[0]
             dlink = first.get("dlink")
             filename = first.get("server_filename", "terabox_download.bin")
-    else:
-        app.logger.info("API error, extracting from HTML")
-        dlink = extract_dlink_from_html(html)
-        if dlink:
-            # Extract filename
-            fname_match = re.search(r'"server_filename"\s*:\s*"([^"]+)"', html)
-            if fname_match:
-                filename = fname_match.group(1)
-            else:
-                title_match = re.search(r'<title>(.+?)</title>', html)
-                if title_match:
-                    filename = title_match.group(1).strip() + ".bin"
-        else:
-            # If still no dlink, try to construct using API data
-            if data:
-                # We have shareid, uk, sign, timestamp, randsk
-                # Build a direct download URL
-                shareid = data.get("shareid")
-                uk = data.get("uk")
-                sign = data.get("sign")
-                timestamp = data.get("timestamp")
-                randsk = data.get("randsk")
-                if shareid and uk and sign and timestamp:
-                    # The actual download endpoint expects these parameters
-                    download_url = f"https://www.terabox.com/api/download?shareid={shareid}&uk={uk}&sign={sign}&timestamp={timestamp}&randsk={randsk}"
-                    # Also need to include the session cookies
-                    # We'll try to get it
-                    try:
-                        dl_resp = session.get(download_url, timeout=15)
-                        # The response might be a redirect or JSON with the dlink
-                        if dl_resp.status_code == 200:
-                            # Try to parse as JSON
-                            try:
-                                dl_data = dl_resp.json()
-                                if 'dlink' in dl_data:
-                                    dlink = dl_data['dlink']
-                                elif 'list' in dl_data and len(dl_data['list']) > 0:
-                                    dlink = dl_data['list'][0].get('dlink')
-                            except:
-                                # Maybe it's a direct binary? Unlikely.
-                                pass
-                    except:
-                        pass
-            if not dlink:
-                return None, None, "No download link found"
+            if dlink:
+                return dlink, filename, session
 
-    if not dlink:
-        return None, None, "No download link found"
+    # If errno is -3 or any other error, try the download API using the metadata
+    if data and data.get("shareid") and data.get("uk"):
+        shareid = data.get("shareid")
+        uk = data.get("uk")
+        sign = data.get("sign")
+        timestamp = data.get("timestamp")
+        randsk = data.get("randsk")
+        # Build the download API call
+        dl_url = f"https://www.terabox.com/api/download?shareid={shareid}&uk={uk}&sign={sign}&timestamp={timestamp}&randsk={randsk}"
+        try:
+            dl_resp = session.get(dl_url, timeout=15)
+            dl_data = dl_resp.json()
+            app.logger.info(f"Download API response: {json.dumps(dl_data)}")
+            if dl_data.get("errno") == 0:
+                file_list = dl_data.get("list", [])
+                if file_list:
+                    first = file_list[0]
+                    dlink = first.get("dlink")
+                    filename = first.get("server_filename", "terabox_download.bin")
+                    if dlink:
+                        return dlink, filename, session
+        except Exception as e:
+            return None, None, f"Download API failed: {str(e)}"
 
-    return dlink, filename, session
+    # Last resort: try to extract dlink from HTML (if we have it)
+    try:
+        html_resp = session.get(page_url, timeout=15)
+        html = html_resp.text
+        soup = BeautifulSoup(html, 'html.parser')
+        for script in soup.find_all('script'):
+            if script.string and ('window.data' in script.string or '__INITIAL_STATE__' in script.string):
+                match = re.search(r'"dlink"\s*:\s*"([^"]+)"', script.string)
+                if match:
+                    dlink = match.group(1).replace('\\', '')
+                    if dlink:
+                        filename = "terabox_download.bin"
+                        fname_match = re.search(r'"server_filename"\s*:\s*"([^"]+)"', script.string)
+                        if fname_match:
+                            filename = fname_match.group(1)
+                        return dlink, filename, session
+    except:
+        pass
+
+    return None, None, "No download link found – the share may require a captcha or is private."
 
 @app.route('/download')
 def download_proxy():
