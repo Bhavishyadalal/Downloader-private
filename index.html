@@ -65,7 +65,7 @@
             margin-bottom: 4px;
             font-weight: 700;
         }
-        input {
+        input, textarea {
             width: 100%;
             padding: 14px 16px;
             border-radius: 16px;
@@ -77,10 +77,57 @@
             outline: none;
             transition: 0.3s;
             margin-bottom: 14px;
+            box-sizing: border-box;
         }
-        input:focus {
+        textarea {
+            min-height: 70px;
+            resize: vertical;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+        input:focus, textarea:focus {
             border-color: #00ffff;
             box-shadow: 0 0 20px rgba(0,255,255,0.2);
+        }
+        .input-row {
+            display: flex;
+            gap: 10px;
+            align-items: stretch;
+            margin-bottom: 14px;
+        }
+        .input-row input, .input-row textarea {
+            margin-bottom: 0;
+            flex: 1;
+        }
+        .btn-sm {
+            padding: 0 16px;
+            border: none;
+            border-radius: 16px;
+            background: #2a2a5a;
+            color: #a0b0f0;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+            white-space: nowrap;
+        }
+        .btn-sm:active {
+            transform: scale(0.95);
+            background: #4a7cff;
+            color: #fff;
+        }
+        .hint {
+            font-size: 10px;
+            color: #6a7a9a;
+            margin: -10px 0 14px;
+            text-align: right;
+        }
+        .hint a {
+            color: #4a7cff;
+            text-decoration: none;
+            border-bottom: 1px dashed #4a7cff;
+            cursor: pointer;
         }
         .btn {
             width: 100%;
@@ -125,6 +172,14 @@
             color: #00ffff;
             text-shadow: 0 0 8px #00ffff;
         }
+        .error {
+            color: #ff6b6b !important;
+            text-shadow: 0 0 10px rgba(255,0,0,0.3) !important;
+        }
+        .success {
+            color: #51cf66 !important;
+            text-shadow: 0 0 10px rgba(0,255,0,0.3) !important;
+        }
     </style>
 </head>
 <body>
@@ -132,32 +187,81 @@
     <h1>⬡ TERABOX ⬡</h1>
     <div class="sub">N E O N · P R O X Y</div>
 
-    <label>🔗 BACKEND (your Render URL)</label>
+    <label>🔗 BACKEND URL</label>
     <input type="text" id="backendUrl" value="https://terabox-proxy-o0pn.onrender.com" />
 
-    <label>📎 TERABOX SHARE LINK</label>
+    <label>🍪 YOUR TERABOX COOKIES (JSON)</label>
+    <div class="input-row">
+        <textarea id="cookiesInput" placeholder='{"cookie_name":"value", ...}'></textarea>
+        <button class="btn-sm" id="pasteBtn">📋 Paste</button>
+    </div>
+    <div class="hint">
+        <a onclick="showCookieHelp()">❓ How to get cookies?</a>
+    </div>
+
+    <label>📎 TERABOX SHARE URL</label>
     <input type="text" id="urlInput" placeholder="https://teraboxurl.com/s/..." />
 
     <button class="btn" id="downloadBtn">⟡ DOWNLOAD ⟡</button>
     <div id="status">⚡ ready</div>
-    <div class="footer">streaming proxy · no storage · 100% neon</div>
+    <div class="footer">streaming proxy · cookies stored locally only</div>
 </div>
 <script>
+    function showCookieHelp() {
+        alert(
+            "📖 GET YOUR COOKIES (one time):\n\n" +
+            "1. Open Chrome → go to terabox.com and LOG IN.\n" +
+            "2. Tap the lock icon in address bar → Cookies → Manage site data.\n" +
+            "3. Copy each cookie name and value into a JSON object like:\n" +
+            '   {"cookie1":"value1", "cookie2":"value2", ...}\n\n' +
+            "💡 EASIER WAY: Run this in Chrome's console (Ctrl+Shift+I → Console):\n" +
+            '   copy(JSON.stringify(document.cookie.split("; ").reduce((a,c)=>{const [k,v]=c.split("=");a[k]=v;return a;},{})));\n\n' +
+            "Then paste the copied JSON into the field above."
+        );
+    }
+
+    // Paste from clipboard
+    document.getElementById('pasteBtn').addEventListener('click', async function() {
+        try {
+            const text = await navigator.clipboard.readText();
+            document.getElementById('cookiesInput').value = text;
+            document.getElementById('status').innerHTML = '✅ Cookies pasted from clipboard';
+            document.getElementById('status').className = 'success';
+        } catch (err) {
+            document.getElementById('status').innerHTML = '❌ Could not read clipboard – paste manually';
+            document.getElementById('status').className = 'error';
+        }
+    });
+
+    // Main download
     document.getElementById('downloadBtn').addEventListener('click', function() {
         const url = document.getElementById('urlInput').value.trim();
         const backend = document.getElementById('backendUrl').value.trim();
+        const cookiesRaw = document.getElementById('cookiesInput').value.trim();
         const status = document.getElementById('status');
 
-        if (!url) { status.innerHTML = '❌ PASTE A TERABOX URL'; return; }
-        if (!backend) { status.innerHTML = '❌ SET BACKEND URL'; return; }
+        if (!url) { status.innerHTML = '❌ PASTE A TERABOX URL'; status.className = 'error'; return; }
+        if (!backend) { status.innerHTML = '❌ SET BACKEND URL'; status.className = 'error'; return; }
+        if (!cookiesRaw) { status.innerHTML = '❌ PASTE YOUR COOKIES (see help)'; status.className = 'error'; return; }
 
-        status.innerHTML = '🔄 CONTACTING PROXY ...';
-        const fullUrl = backend + '/download?url=' + encodeURIComponent(url);
+        // Validate JSON
+        let cookiesObj;
+        try {
+            cookiesObj = JSON.parse(cookiesRaw);
+        } catch (e) {
+            status.innerHTML = '❌ INVALID JSON – check cookies format';
+            status.className = 'error';
+            return;
+        }
+
+        status.innerHTML = '🔄 CONTACTING PROXY WITH YOUR COOKIES ...';
+        status.className = '';
+        const fullUrl = backend + '/download?url=' + encodeURIComponent(url) + '&cookies=' + encodeURIComponent(JSON.stringify(cookiesObj));
         window.location.href = fullUrl;
-
         setTimeout(() => {
             status.innerHTML = '✅ DOWNLOAD TRIGGERED · CHECK YOUR BROWSER';
-        }, 2500);
+            status.className = 'success';
+        }, 3000);
     });
 </script>
 </body>
