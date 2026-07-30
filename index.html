@@ -189,8 +189,8 @@
         }
     });
 
-    // Main download
-    document.getElementById('downloadBtn').addEventListener('click', function() {
+    // Main download – using POST to avoid URL length limit
+    document.getElementById('downloadBtn').addEventListener('click', async function() {
         const url = document.getElementById('urlInput').value.trim();
         const backend = document.getElementById('backendUrl').value.trim();
         const cookiesRaw = document.getElementById('cookiesInput').value.trim();
@@ -200,7 +200,6 @@
         if (!backend) { status.innerHTML = '❌ SET BACKEND URL'; status.className = 'error'; return; }
         if (!cookiesRaw) { status.innerHTML = '❌ PASTE YOUR COOKIES (see help)'; status.className = 'error'; return; }
 
-        // Validate JSON (array or object)
         let cookiesObj;
         try {
             cookiesObj = JSON.parse(cookiesRaw);
@@ -212,12 +211,45 @@
 
         status.innerHTML = '🔄 CONTACTING PROXY WITH YOUR COOKIES ...';
         status.className = '';
-        const fullUrl = backend + '/download?url=' + encodeURIComponent(url) + '&cookies=' + encodeURIComponent(JSON.stringify(cookiesObj));
-        window.location.href = fullUrl;
-        setTimeout(() => {
-            status.innerHTML = '✅ DOWNLOAD TRIGGERED · CHECK YOUR BROWSER';
+
+        try {
+            const response = await fetch(backend + '/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, cookies: cookiesObj })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                status.innerHTML = '❌ ERROR: ' + errorText;
+                status.className = 'error';
+                return;
+            }
+
+            // If response is a file stream, we need to trigger download
+            // We can use a Blob to download the file
+            const blob = await response.blob();
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = 'terabox_download.bin';
+            if (contentDisposition) {
+                const match = contentDisposition.match(/filename="(.+)"/);
+                if (match) filename = match[1];
+            }
+            const downloadUrl = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(downloadUrl);
+
+            status.innerHTML = '✅ DOWNLOAD SUCCESSFUL: ' + filename;
             status.className = 'success';
-        }, 3000);
+        } catch (error) {
+            status.innerHTML = '❌ NETWORK ERROR: ' + error.message;
+            status.className = 'error';
+        }
     });
 </script>
 </body>
