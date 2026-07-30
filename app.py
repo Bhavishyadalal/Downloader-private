@@ -7,8 +7,6 @@ import json
 import logging
 
 app = Flask(__name__)
-
-# Enable logging to see errors in Render logs
 logging.basicConfig(level=logging.INFO)
 
 @app.after_request
@@ -26,63 +24,84 @@ HEADERS = {
 }
 @app.route('/')
 def home():
-    return {
-        "status": "alive",
-        "message": "Terabox Proxy is running",
-        "endpoints": {
-            "/download?url=<terabox_link>": "Download a file",
-            "/ping": "Health check"
-        }
-    }
+    return {"status":"alive","message":"Terabox Proxy running","endpoints":{"/download?url=...":"Download file","/ping":"Health check"}}
+
+@app.route('/ping')
+def ping():
+    return "OK", 200
+def extract_dlink_from_html(html):
+    # Look for window.data = {...} or window.__INITIAL_STATE__
+    # Typical pattern: "dlink":"https://..."
+    match = re.search(r'"dlink"\s*:\s*"([^"]+)"', html)
+    if match:
+        dlink = match.group(1).replace('\\', '')
+        return dlink
+    # Also look for "download_link":"..."
+    match = re.search(r'"download_link"\s*:\s*"([^"]+)"', html)
+    if match:
+        return match.group(1).replace('\\', '')
+    return None
+
 def get_dlink_and_filename(share_url):
     match = re.search(r'/s/([A-Za-z0-9_-]+)', share_url)
     if not match:
-        return None, None, "Invalid URL format (missing /s/ key)"
+        return None, None, "Invalid URL format"
     key = match.group(1)
 
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    # First visit the share page to get cookies and session
+    # First visit the share page – this gives us cookies and HTML
     page_url = f"https://www.terabox.com/s/{key}"
     try:
-        session.get(page_url, timeout=15)
+        page_resp = session.get(page_url, timeout=15)
+        page_resp.raise_for_status()
+        html = page_resp.text
     except Exception as e:
-        return None, None, f"Failed to reach Terabox share page: {str(e)}"
+        return None, None, f"Failed to load share page: {str(e)}"
 
-    # Now call the API
+    # Try API first (fast)
     api_url = f"https://www.terabox.com/api/shorturlinfo?shorturl={key}"
     try:
-        resp = session.get(api_url, timeout=15)
-        # Try to parse JSON, but sometimes it returns HTML (e.g., 404)
-        try:
-            data = resp.json()
-        except json.JSONDecodeError:
-            # If not JSON, return raw text for debugging
-            return None, None, f"API returned non-JSON (maybe HTML): {resp.text[:200]}"
-    except Exception as e:
-        return None, None, f"API request failed: {str(e)}"
+        api_resp = session.get(api_url, timeout=15)
+        data = api_resp.json()
+    except:
+        data = None
 
-    # Log the full response for debugging (visible in Render logs)
-    app.logger.info(f"API response: {json.dumps(data, indent=2)}")
+    dlink = None
+    filename = "terabox_download.bin"
 
-    if data.get("errno") != 0:
-        # Return the full error object so we can see what's wrong
-        err_details = json.dumps(data)
-        return None, None, f"Terabox API error: {err_details}"
+    if data and data.get("errno") == 0:
+        file_list = data.get("list", [])
+        if file_list:
+            first = file_list[0]
+            dlink = first.get("dlink")
+            filename = first.get("server_filename", "terabox_download.bin")
+    else:
+        # API failed – fallback to HTML scraping
+        app.logger.info("API returned error, trying HTML scraping")
+        dlink = extract_dlink_from_html(html)
+        if dlink:
+            # Try to extract filename from HTML as well
+            fname_match = re.search(r'"server_filename"\s*:\s*"([^"]+)"', html)
+            if fname_match:
+                filename = fname_match.group(1)
+            else:
+                # Fallback filename from title
+                title_match = re.search(r'<title>(.+?)</title>', html)
+                if title_match:
+                    filename = title_match.group(1).strip() + ".bin"
+        else:
+            # If still no dlink, return the API error or a generic message
+            err_msg = "No download link found. This link may require captcha or login."
+            if data:
+                err_msg = f"API error: {json.dumps(data)}"
+            return None, None, err_msg
 
-    file_list = data.get("list", [])
-    if not file_list:
-        return None, None, "No files found in this share"
-
-    first = file_list[0]
-    dlink = first.get("dlink")
-    filename = first.get("server_filename", "terabox_download.bin")
     if not dlink:
-        return None, None, "No download link in API response"
+        return None, None, "Could not extract download link"
 
     return dlink, filename, session
-
 @app.route('/download')
 def download_proxy():
     share_url = request.args.get('url')
@@ -92,7 +111,6 @@ def download_proxy():
     share_url = urllib.parse.unquote(share_url)
     dlink, filename, session_or_err = get_dlink_and_filename(share_url)
     if isinstance(session_or_err, str):
-        # Return error as plain text for the frontend to show
         return f"Error: {session_or_err}", 400
 
     try:
@@ -109,9 +127,6 @@ def download_proxy():
             'Content-Length': stream_resp.headers.get('Content-Length', '')
         }
     )
-@app.route('/ping')
-def ping():
-    return "OK", 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
