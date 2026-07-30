@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Terabox Grabber</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Orbitron', sans-serif;
+            background: radial-gradient(circle at top left, #0f0c29, #302b63, #24243e);
+            padding: 16px;
+        }
+        .card {
+            background: rgba(10, 8, 20, 0.75);
+            backdrop-filter: blur(12px);
+            padding: 32px 24px;
+            border-radius: 32px;
+            max-width: 520px;
+            width: 100%;
+            border: 2px solid rgba(0, 255, 255, 0.3);
+            box-shadow: 0 0 40px rgba(0, 255, 255, 0.15), 0 0 80px rgba(255, 0, 255, 0.1);
+            transition: 0.3s;
+        }
+        .card:hover {
+            border-color: #ff00ff;
+            box-shadow: 0 0 60px rgba(255, 0, 255, 0.25), 0 0 120px rgba(0, 255, 255, 0.15);
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: 900;
+            text-align: center;
+            background: linear-gradient(90deg, #00ffff, #ff00ff, #00ffff);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 3s linear infinite;
+            letter-spacing: 2px;
+            text-shadow: 0 0 30px rgba(0,255,255,0.3);
+        }
+        @keyframes shimmer {
+            0% { background-position: 0% center; }
+            100% { background-position: 200% center; }
+        }
+        .sub {
+            text-align: center;
+            font-size: 12px;
+            color: #a0a8d0;
+            margin: 4px 0 24px 0;
+            letter-spacing: 3px;
+            font-weight: 400;
+            text-transform: uppercase;
+            opacity: 0.7;
+        }
+        label {
+            display: block;
+            font-size: 11px;
+            color: #7a82b0;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+            font-weight: 700;
+        }
+        input {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 16px;
+            border: 1.5px solid #2a2a5a;
+            background: rgba(0,0,0,0.5);
+            color: #e0e8ff;
+            font-size: 14px;
+            font-family: 'Orbitron', sans-serif;
+            outline: none;
+            transition: 0.3s;
+            margin-bottom: 14px;
+        }
+        input:focus {
+            border-color: #00ffff;
+            box-shadow: 0 0 20px rgba(0,255,255,0.2);
+        }
+        .btn {
+            width: 100%;
+            padding: 16px;
+            border: none;
+            border-radius: 16px;
+            background: linear-gradient(135deg, #00c6ff, #0072ff);
+            color: #fff;
+            font-size: 18px;
+            font-weight: 700;
+            font-family: 'Orbitron', sans-serif;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: 0.3s;
+            text-transform: uppercase;
+            box-shadow: 0 0 30px rgba(0,114,255,0.3);
+        }
+        .btn:active {
+            transform: scale(0.96);
+            box-shadow: 0 0 60px rgba(0,255,255,0.6);
+        }
+        #status {
+            margin-top: 18px;
+            font-size: 12px;
+            color: #a0b0f0;
+            text-align: center;
+            min-height: 20px;
+            letter-spacing: 1px;
+            font-weight: 400;
+            text-shadow: 0 0 10px rgba(0,255,255,0.2);
+        }
+        .footer {
+            margin-top: 24px;
+            font-size: 9px;
+            color: #4a4a7a;
+            text-align: center;
+            letter-spacing: 2px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            padding-top: 16px;
+        }
+        .glow-text {
+            color: #00ffff;
+            text-shadow: 0 0 8px #00ffff;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>⬡ TERABOX ⬡</h1>
+    <div class="sub">N E O N · P R O X Y</div>
+
+    <label>🔗 BACKEND (your Render URL)</label>
+    <input type="text" id="backendUrl" value="https://terabox-proxy-o0pn.onrender.com" />
+
+    <label>📎 TERABOX SHARE LINK</label>
+    <input type="text" id="urlInput" placeholder="https://teraboxurl.com/s/..." />
+
+    <button class="btn" id="downloadBtn">⟡ DOWNLOAD ⟡</button>
+    <div id="status">⚡ ready</div>
+    <div class="footer">streaming proxy · no storage · 100% neon</div>
+</div>
+<script>
+    document.getElementById('downloadBtn').addEventListener('click', function() {
+        const url = document.getElementById('urlInput').value.trim();
+        const backend = document.getElementById('backendUrl').value.trim();
+        const status = document.getElementById('status');
+
+        if (!url) { status.innerHTML = '❌ PASTE A TERABOX URL'; return; }
+        if (!backend) { status.innerHTML = '❌ SET BACKEND URL'; return; }
+
+        status.innerHTML = '🔄 CONTACTING PROXY ...';
+        const fullUrl = backend + '/download?url=' + encodeURIComponent(url);
+        window.location.href = fullUrl;
+
+        setTimeout(() => {
+            status.innerHTML = '✅ DOWNLOAD TRIGGERED · CHECK YOUR BROWSER';
+        }, 2500);
+    });
+</script>
+</body>
+</html>
