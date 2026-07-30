@@ -24,8 +24,27 @@ def home():
 def ping():
     return "OK", 200
 
+def parse_cookies(cookie_data):
+    """
+    Accept either a dict {name: value} or an array of {name, value, ...}
+    Return a dict of name->value.
+    """
+    if isinstance(cookie_data, dict):
+        return cookie_data
+    if isinstance(cookie_data, list):
+        result = {}
+        for item in cookie_data:
+            if 'name' in item and 'value' in item:
+                result[item['name']] = item['value']
+        return result
+    return {}
+
 def get_dlink_with_cookies(share_url, cookie_dict):
-    key = re.search(r'/s/([A-Za-z0-9_-]+)', share_url).group(1)
+    key = re.search(r'/s/([A-Za-z0-9_-]+)', share_url)
+    if not key:
+        return None, "Invalid share URL"
+    key = key.group(1)
+
     session = requests.Session()
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -37,9 +56,8 @@ def get_dlink_with_cookies(share_url, cookie_dict):
         session.cookies.set(name, value)
 
     # Visit share page to get fresh tokens
-    page_url = f"https://www.terabox.com/s/{key}"
     try:
-        session.get(page_url, timeout=15)
+        session.get(f"https://www.terabox.com/s/{key}", timeout=15)
     except:
         pass
 
@@ -72,12 +90,16 @@ def download_proxy():
         return "Missing ?cookies= parameter – you must provide your Terabox cookies.", 400
 
     try:
-        cookies = json.loads(urllib.parse.unquote(cookies_json))
+        cookie_data = json.loads(urllib.parse.unquote(cookies_json))
     except:
-        return "Invalid cookies format – must be JSON object", 400
+        return "Invalid cookies format – must be JSON (object or array)", 400
+
+    cookie_dict = parse_cookies(cookie_data)
+    if not cookie_dict:
+        return "No valid cookies found in the provided data", 400
 
     share_url = urllib.parse.unquote(share_url)
-    dlink, filename_or_error = get_dlink_with_cookies(share_url, cookies)
+    dlink, filename_or_error = get_dlink_with_cookies(share_url, cookie_dict)
     if not dlink:
         return f"Error: {filename_or_error}", 400
 
