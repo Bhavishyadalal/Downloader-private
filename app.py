@@ -25,10 +25,6 @@ def ping():
     return "OK", 200
 
 def parse_cookies(cookie_data):
-    """
-    Accept either a dict {name: value} or an array of {name, value, ...}
-    Return a dict of name->value.
-    """
     if isinstance(cookie_data, dict):
         return cookie_data
     if isinstance(cookie_data, list):
@@ -51,17 +47,14 @@ def get_dlink_with_cookies(share_url, cookie_dict):
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://www.terabox.com/"
     })
-    # Set cookies
     for name, value in cookie_dict.items():
         session.cookies.set(name, value)
 
-    # Visit share page to get fresh tokens
     try:
         session.get(f"https://www.terabox.com/s/{key}", timeout=15)
     except:
         pass
 
-    # API call – should now work because we have login cookies
     api_url = f"https://www.terabox.com/api/shorturlinfo?shorturl={key}"
     try:
         resp = session.get(api_url, timeout=15)
@@ -77,28 +70,38 @@ def get_dlink_with_cookies(share_url, cookie_dict):
             return None, f"API error: {data.get('errmsg', 'unknown')}"
     except Exception as e:
         return None, f"API request failed: {str(e)}"
-
     return None, "No download link"
 
-@app.route('/download')
+@app.route('/download', methods=['GET', 'POST'])
 def download_proxy():
-    share_url = request.args.get('url')
-    cookies_json = request.args.get('cookies')
+    # Handle POST (preferred)
+    if request.method == 'POST':
+        data = request.get_json()
+        if not data:
+            return "Missing JSON body", 400
+        share_url = data.get('url')
+        cookies_data = data.get('cookies')
+    else:
+        # GET fallback (not recommended for large cookies)
+        share_url = request.args.get('url')
+        cookies_json = request.args.get('cookies')
+        if cookies_json:
+            try:
+                cookies_data = json.loads(urllib.parse.unquote(cookies_json))
+            except:
+                return "Invalid cookies format", 400
+        else:
+            cookies_data = None
+
     if not share_url:
-        return "Missing ?url= parameter", 400
-    if not cookies_json:
-        return "Missing ?cookies= parameter – you must provide your Terabox cookies.", 400
+        return "Missing 'url' parameter", 400
+    if not cookies_data:
+        return "Missing 'cookies' – must provide your Terabox cookies.", 400
 
-    try:
-        cookie_data = json.loads(urllib.parse.unquote(cookies_json))
-    except:
-        return "Invalid cookies format – must be JSON (object or array)", 400
-
-    cookie_dict = parse_cookies(cookie_data)
+    cookie_dict = parse_cookies(cookies_data)
     if not cookie_dict:
-        return "No valid cookies found in the provided data", 400
+        return "No valid cookies found", 400
 
-    share_url = urllib.parse.unquote(share_url)
     dlink, filename_or_error = get_dlink_with_cookies(share_url, cookie_dict)
     if not dlink:
         return f"Error: {filename_or_error}", 400
