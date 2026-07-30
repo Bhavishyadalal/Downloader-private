@@ -17,11 +17,51 @@ def add_cors(resp):
 
 @app.route('/')
 def home():
-    return {"status": "alive", "message": "Terabox Proxy via public API"}
+    return {"status": "alive", "message": "Terabox Proxy with multiple APIs"}
 
 @app.route('/ping')
 def ping():
     return "OK", 200
+
+def get_dlink_via_api(share_url):
+    # List of public Terabox download APIs (free, no login)
+    apis = [
+        {"url": f"https://teraboxdownloader.com/api?url={share_url}", "type": "json"},
+        {"url": f"https://terabox-download.com/api?url={share_url}", "type": "json"},
+        {"url": f"https://terabox.how/api?url={share_url}", "type": "json"},
+        {"url": f"https://terabox-downloader.com/api?url={share_url}", "type": "json"}
+    ]
+    for api in apis:
+        try:
+            resp = requests.get(api["url"], timeout=20)
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            # Different APIs return different structures
+            # Try common patterns
+            if data.get('success') or data.get('status') == 'success':
+                dlink = data.get('direct_link') or data.get('dlink') or data.get('link')
+                filename = data.get('filename') or data.get('file_name') or 'terabox_download.bin'
+                if dlink:
+                    return dlink, filename
+            # Some APIs return a 'list' like official
+            if 'list' in data and len(data['list']) > 0:
+                first = data['list'][0]
+                dlink = first.get('dlink')
+                filename = first.get('server_filename', 'terabox_download.bin')
+                if dlink:
+                    return dlink, filename
+            # Some return 'data' field
+            if 'data' in data:
+                if isinstance(data['data'], dict):
+                    dlink = data['data'].get('dlink') or data['data'].get('link')
+                    filename = data['data'].get('filename', 'terabox_download.bin')
+                    if dlink:
+                        return dlink, filename
+        except Exception as e:
+            app.logger.info(f"API {api['url']} failed: {str(e)}")
+            continue
+    return None, None
 
 @app.route('/download')
 def download_proxy():
@@ -30,22 +70,9 @@ def download_proxy():
         return "Missing ?url= parameter", 400
 
     share_url = urllib.parse.unquote(share_url)
-
-    # Use public terabox downloader API
-    # terabox.how is free and doesn't require login
-    api_url = f"https://terabox.how/api?url={share_url}"
-    try:
-        resp = requests.get(api_url, timeout=30)
-        data = resp.json()
-        if data.get('success'):
-            dlink = data.get('direct_link')
-            filename = data.get('filename', 'terabox_download.bin')
-            if not dlink:
-                return "Error: No direct link from API", 400
-        else:
-            return f"Error: {data.get('message', 'Unknown API error')}", 400
-    except Exception as e:
-        return f"API request failed: {str(e)}", 500
+    dlink, filename = get_dlink_via_api(share_url)
+    if not dlink:
+        return "Error: All APIs failed. The share may require login or is invalid.", 400
 
     # Stream the file from the dlink
     session = requests.Session()
