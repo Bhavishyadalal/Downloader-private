@@ -4,8 +4,12 @@ import re
 import urllib.parse
 import os
 import json
+import logging
 
 app = Flask(__name__)
+
+# Enable logging to see errors in Render logs
+logging.basicConfig(level=logging.INFO)
 
 @app.after_request
 def add_cors(resp):
@@ -33,37 +37,49 @@ def home():
 def get_dlink_and_filename(share_url):
     match = re.search(r'/s/([A-Za-z0-9_-]+)', share_url)
     if not match:
-        return None, None, "Invalid URL format"
+        return None, None, "Invalid URL format (missing /s/ key)"
     key = match.group(1)
 
     session = requests.Session()
     session.headers.update(HEADERS)
 
+    # First visit the share page to get cookies and session
     page_url = f"https://www.terabox.com/s/{key}"
     try:
         session.get(page_url, timeout=15)
     except Exception as e:
-        return None, None, f"Failed to reach Terabox: {str(e)}"
+        return None, None, f"Failed to reach Terabox share page: {str(e)}"
 
+    # Now call the API
     api_url = f"https://www.terabox.com/api/shorturlinfo?shorturl={key}"
     try:
         resp = session.get(api_url, timeout=15)
-        data = resp.json()
+        # Try to parse JSON, but sometimes it returns HTML (e.g., 404)
+        try:
+            data = resp.json()
+        except json.JSONDecodeError:
+            # If not JSON, return raw text for debugging
+            return None, None, f"API returned non-JSON (maybe HTML): {resp.text[:200]}"
     except Exception as e:
-        return None, None, f"API error: {str(e)}"
+        return None, None, f"API request failed: {str(e)}"
+
+    # Log the full response for debugging (visible in Render logs)
+    app.logger.info(f"API response: {json.dumps(data, indent=2)}")
 
     if data.get("errno") != 0:
-        return None, None, f"Terabox error: {data.get('errmsg', 'unknown')}"
+        # Return the full error object so we can see what's wrong
+        err_details = json.dumps(data)
+        return None, None, f"Terabox API error: {err_details}"
 
     file_list = data.get("list", [])
     if not file_list:
-        return None, None, "No files found"
+        return None, None, "No files found in this share"
 
     first = file_list[0]
     dlink = first.get("dlink")
     filename = first.get("server_filename", "terabox_download.bin")
     if not dlink:
-        return None, None, "No download link"
+        return None, None, "No download link in API response"
 
     return dlink, filename, session
 
@@ -76,6 +92,7 @@ def download_proxy():
     share_url = urllib.parse.unquote(share_url)
     dlink, filename, session_or_err = get_dlink_and_filename(share_url)
     if isinstance(session_or_err, str):
+        # Return error as plain text for the frontend to show
         return f"Error: {session_or_err}", 400
 
     try:
