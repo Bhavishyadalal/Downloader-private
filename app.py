@@ -5,6 +5,7 @@ import urllib.parse
 import os
 import json
 import logging
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -24,20 +25,52 @@ HEADERS = {
 }
 @app.route('/')
 def home():
-    return {"status":"alive","message":"Terabox Proxy running","endpoints":{"/download?url=...":"Download file","/ping":"Health check"}}
+    return {
+        "status": "alive",
+        "message": "Terabox Proxy is running",
+        "endpoints": {
+            "/download?url=<terabox_link>": "Download a file",
+            "/ping": "Health check"
+        }
+    }
 
 @app.route('/ping')
 def ping():
     return "OK", 200
 def extract_dlink_from_html(html):
-    # Look for window.data = {...} or window.__INITIAL_STATE__
-    # Typical pattern: "dlink":"https://..."
+    # Use BeautifulSoup to find all script tags
+    soup = BeautifulSoup(html, 'html.parser')
+    for script in soup.find_all('script'):
+        if script.string:
+            content = script.string
+            # Look for window.data or __INITIAL_STATE__
+            if 'window.data' in content or '__INITIAL_STATE__' in content:
+                # Try to extract JSON object
+                # Find the first { and the last } in the script
+                start = content.find('{')
+                end = content.rfind('}')
+                if start != -1 and end != -1 and end > start:
+                    json_str = content[start:end+1]
+                    try:
+                        data = json.loads(json_str)
+                        # If it's wrapped like { data: {...} }
+                        if 'data' in data and isinstance(data['data'], dict):
+                            data = data['data']
+                        # Now look for list
+                        if 'list' in data and isinstance(data['list'], list) and len(data['list']) > 0:
+                            dlink = data['list'][0].get('dlink')
+                            if dlink:
+                                return dlink
+                        # Also check for direct dlink
+                        if 'dlink' in data:
+                            return data['dlink']
+                    except json.JSONDecodeError:
+                        # Try to extract using regex as fallback
+                        match = re.search(r'"dlink"\s*:\s*"([^"]+)"', content)
+                        if match:
+                            return match.group(1).replace('\\', '')
+    # Fallback: search entire HTML for "dlink":"..."
     match = re.search(r'"dlink"\s*:\s*"([^"]+)"', html)
-    if match:
-        dlink = match.group(1).replace('\\', '')
-        return dlink
-    # Also look for "download_link":"..."
-    match = re.search(r'"download_link"\s*:\s*"([^"]+)"', html)
     if match:
         return match.group(1).replace('\\', '')
     return None
@@ -45,13 +78,13 @@ def extract_dlink_from_html(html):
 def get_dlink_and_filename(share_url):
     match = re.search(r'/s/([A-Za-z0-9_-]+)', share_url)
     if not match:
-        return None, None, "Invalid URL format"
+        return None, None, "Invalid URL format (missing /s/ key)"
     key = match.group(1)
 
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    # First visit the share page – this gives us cookies and HTML
+    # First, visit the share page to get cookies and HTML
     page_url = f"https://www.terabox.com/s/{key}"
     try:
         page_resp = session.get(page_url, timeout=15)
@@ -60,13 +93,14 @@ def get_dlink_and_filename(share_url):
     except Exception as e:
         return None, None, f"Failed to load share page: {str(e)}"
 
-    # Try API first (fast)
+    # Try the API first (fast)
     api_url = f"https://www.terabox.com/api/shorturlinfo?shorturl={key}"
+    data = None
     try:
         api_resp = session.get(api_url, timeout=15)
         data = api_resp.json()
     except:
-        data = None
+        pass
 
     dlink = None
     filename = "terabox_download.bin"
@@ -78,28 +112,27 @@ def get_dlink_and_filename(share_url):
             dlink = first.get("dlink")
             filename = first.get("server_filename", "terabox_download.bin")
     else:
-        # API failed – fallback to HTML scraping
+        # API returned error – fallback to HTML scraping
         app.logger.info("API returned error, trying HTML scraping")
         dlink = extract_dlink_from_html(html)
         if dlink:
-            # Try to extract filename from HTML as well
+            # Try to extract filename from HTML
             fname_match = re.search(r'"server_filename"\s*:\s*"([^"]+)"', html)
             if fname_match:
                 filename = fname_match.group(1)
             else:
-                # Fallback filename from title
                 title_match = re.search(r'<title>(.+?)</title>', html)
                 if title_match:
                     filename = title_match.group(1).strip() + ".bin"
         else:
-            # If still no dlink, return the API error or a generic message
-            err_msg = "No download link found. This link may require captcha or login."
+            # Still no dlink – return the API error if exists, else generic
             if data:
-                err_msg = f"API error: {json.dumps(data)}"
-            return None, None, err_msg
+                return None, None, f"API error: {json.dumps(data)}"
+            else:
+                return None, None, "Could not extract download link from HTML"
 
     if not dlink:
-        return None, None, "Could not extract download link"
+        return None, None, "No download link found"
 
     return dlink, filename, session
 @app.route('/download')
