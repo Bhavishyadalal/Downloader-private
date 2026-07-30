@@ -25,11 +25,6 @@
             width: 100%;
             border: 2px solid rgba(0, 255, 255, 0.3);
             box-shadow: 0 0 40px rgba(0, 255, 255, 0.15), 0 0 80px rgba(255, 0, 255, 0.1);
-            transition: 0.3s;
-        }
-        .card:hover {
-            border-color: #ff00ff;
-            box-shadow: 0 0 60px rgba(255, 0, 255, 0.25), 0 0 120px rgba(0, 255, 255, 0.15);
         }
         h1 {
             font-size: 28px;
@@ -41,30 +36,10 @@
             -webkit-text-fill-color: transparent;
             animation: shimmer 3s linear infinite;
             letter-spacing: 2px;
-            text-shadow: 0 0 30px rgba(0,255,255,0.3);
         }
-        @keyframes shimmer {
-            0% { background-position: 0% center; }
-            100% { background-position: 200% center; }
-        }
-        .sub {
-            text-align: center;
-            font-size: 12px;
-            color: #a0a8d0;
-            margin: 4px 0 24px 0;
-            letter-spacing: 3px;
-            font-weight: 400;
-            text-transform: uppercase;
-            opacity: 0.7;
-        }
-        label {
-            display: block;
-            font-size: 11px;
-            color: #7a82b0;
-            letter-spacing: 1px;
-            margin-bottom: 4px;
-            font-weight: 700;
-        }
+        @keyframes shimmer { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
+        .sub { text-align: center; font-size: 12px; color: #a0a8d0; margin: 4px 0 24px; letter-spacing: 3px; opacity: 0.7; }
+        label { display: block; font-size: 11px; color: #7a82b0; letter-spacing: 1px; margin-bottom: 4px; font-weight: 700; }
         input, textarea {
             width: 100%;
             padding: 14px 16px;
@@ -80,25 +55,20 @@
             box-sizing: border-box;
         }
         textarea {
-            min-height: 70px;
+            min-height: 90px;
             resize: vertical;
             font-family: 'Courier New', monospace;
-            font-size: 13px;
+            font-size: 12px;
+            line-height: 1.5;
         }
-        input:focus, textarea:focus {
-            border-color: #00ffff;
-            box-shadow: 0 0 20px rgba(0,255,255,0.2);
-        }
+        input:focus, textarea:focus { border-color: #00ffff; box-shadow: 0 0 20px rgba(0,255,255,0.2); }
         .input-row {
             display: flex;
             gap: 10px;
             align-items: stretch;
             margin-bottom: 14px;
         }
-        .input-row input, .input-row textarea {
-            margin-bottom: 0;
-            flex: 1;
-        }
+        .input-row textarea { margin-bottom: 0; flex: 1; }
         .btn-sm {
             padding: 0 16px;
             border: none;
@@ -112,11 +82,7 @@
             transition: 0.2s;
             white-space: nowrap;
         }
-        .btn-sm:active {
-            transform: scale(0.95);
-            background: #4a7cff;
-            color: #fff;
-        }
+        .btn-sm:active { transform: scale(0.95); background: #4a7cff; color: #fff; }
         .hint {
             font-size: 10px;
             color: #6a7a9a;
@@ -145,10 +111,7 @@
             text-transform: uppercase;
             box-shadow: 0 0 30px rgba(0,114,255,0.3);
         }
-        .btn:active {
-            transform: scale(0.96);
-            box-shadow: 0 0 60px rgba(0,255,255,0.6);
-        }
+        .btn:active { transform: scale(0.96); box-shadow: 0 0 60px rgba(0,255,255,0.6); }
         #status {
             margin-top: 18px;
             font-size: 12px;
@@ -168,18 +131,8 @@
             border-top: 1px solid rgba(255,255,255,0.05);
             padding-top: 16px;
         }
-        .glow-text {
-            color: #00ffff;
-            text-shadow: 0 0 8px #00ffff;
-        }
-        .error {
-            color: #ff6b6b !important;
-            text-shadow: 0 0 10px rgba(255,0,0,0.3) !important;
-        }
-        .success {
-            color: #51cf66 !important;
-            text-shadow: 0 0 10px rgba(0,255,0,0.3) !important;
-        }
+        .error { color: #ff6b6b !important; text-shadow: 0 0 10px rgba(255,0,0,0.3) !important; }
+        .success { color: #51cf66 !important; text-shadow: 0 0 10px rgba(0,255,0,0.3) !important; }
     </style>
 </head>
 <body>
@@ -190,9 +143,9 @@
     <label>🔗 BACKEND URL</label>
     <input type="text" id="backendUrl" value="https://terabox-proxy-o0pn.onrender.com" />
 
-    <label>🍪 YOUR TERABOX COOKIES (JSON)</label>
+    <label>🍪 YOUR TERABOX COOKIES (JSON array or object)</label>
     <div class="input-row">
-        <textarea id="cookiesInput" placeholder='{"cookie_name":"value", ...}'></textarea>
+        <textarea id="cookiesInput" placeholder='[{"name":"cookie1","value":"val1"}, ...]'></textarea>
         <button class="btn-sm" id="pasteBtn">📋 Paste</button>
     </div>
     <div class="hint">
@@ -211,12 +164,15 @@
         alert(
             "📖 GET YOUR COOKIES (one time):\n\n" +
             "1. Open Chrome → go to terabox.com and LOG IN.\n" +
-            "2. Tap the lock icon in address bar → Cookies → Manage site data.\n" +
-            "3. Copy each cookie name and value into a JSON object like:\n" +
-            '   {"cookie1":"value1", "cookie2":"value2", ...}\n\n' +
-            "💡 EASIER WAY: Run this in Chrome's console (Ctrl+Shift+I → Console):\n" +
-            '   copy(JSON.stringify(document.cookie.split("; ").reduce((a,c)=>{const [k,v]=c.split("=");a[k]=v;return a;},{})));\n\n' +
-            "Then paste the copied JSON into the field above."
+            "2. Tap the lock icon → Cookies → Manage site data.\n" +
+            "3. Copy the cookies (you can use an extension or manually).\n\n" +
+            "💡 EASIEST WAY (using Chrome DevTools):\n" +
+            "   - Open terabox.com while logged in.\n" +
+            "   - Open DevTools (Ctrl+Shift+I) → Console.\n" +
+            "   - Paste this and press Enter:\n" +
+            '      copy(JSON.stringify(document.cookie.split("; ").map(c=>{const [n,v]=c.split("=");return{name:n,value:v}})));\n' +
+            "   - The cookies JSON array is now in your clipboard.\n\n" +
+            "Then paste it into the field above."
         );
     }
 
@@ -244,12 +200,12 @@
         if (!backend) { status.innerHTML = '❌ SET BACKEND URL'; status.className = 'error'; return; }
         if (!cookiesRaw) { status.innerHTML = '❌ PASTE YOUR COOKIES (see help)'; status.className = 'error'; return; }
 
-        // Validate JSON
+        // Validate JSON (array or object)
         let cookiesObj;
         try {
             cookiesObj = JSON.parse(cookiesRaw);
         } catch (e) {
-            status.innerHTML = '❌ INVALID JSON – check cookies format';
+            status.innerHTML = '❌ INVALID JSON – check format';
             status.className = 'error';
             return;
         }
