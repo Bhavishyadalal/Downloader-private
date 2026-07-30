@@ -20,6 +20,16 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.5",
     "Referer": "https://www.terabox.com/",
 }
+@app.route('/')
+def home():
+    return {
+        "status": "alive",
+        "message": "Terabox Proxy is running",
+        "endpoints": {
+            "/download?url=<terabox_link>": "Download a file",
+            "/ping": "Health check"
+        }
+    }
 def get_dlink_and_filename(share_url):
     match = re.search(r'/s/([A-Za-z0-9_-]+)', share_url)
     if not match:
