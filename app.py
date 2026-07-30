@@ -7,7 +7,6 @@ import json
 
 app = Flask(__name__)
 
-# Add CORS headers to every response so your phone HTML can talk to this backend
 @app.after_request
 def add_cors(resp):
     resp.headers['Access-Control-Allow-Origin'] = '*'
@@ -15,7 +14,6 @@ def add_cors(resp):
     resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     return resp
 
-# Browser headers to fool Terabox
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -31,14 +29,12 @@ def get_dlink_and_filename(share_url):
     session = requests.Session()
     session.headers.update(HEADERS)
 
-    # Visit share page to get cookies
     page_url = f"https://www.terabox.com/s/{key}"
     try:
         session.get(page_url, timeout=15)
     except Exception as e:
         return None, None, f"Failed to reach Terabox: {str(e)}"
 
-    # Call API for file info
     api_url = f"https://www.terabox.com/api/shorturlinfo?shorturl={key}"
     try:
         resp = session.get(api_url, timeout=15)
@@ -60,6 +56,7 @@ def get_dlink_and_filename(share_url):
         return None, None, "No download link"
 
     return dlink, filename, session
+
 @app.route('/download')
 def download_proxy():
     share_url = request.args.get('url')
@@ -67,9 +64,8 @@ def download_proxy():
         return "Missing ?url= parameter", 400
 
     share_url = urllib.parse.unquote(share_url)
-
     dlink, filename, session_or_err = get_dlink_and_filename(share_url)
-    if isinstance(session_or_err, str):  # error message
+    if isinstance(session_or_err, str):
         return f"Error: {session_or_err}", 400
 
     try:
@@ -86,6 +82,10 @@ def download_proxy():
             'Content-Length': stream_resp.headers.get('Content-Length', '')
         }
     )
+@app.route('/ping')
+def ping():
+    return "OK", 200
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
